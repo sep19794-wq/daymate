@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<rect width="512" height="512" rx="112" fill="#f7f3ed"/>
+<circle cx="256" cy="236" r="142" fill="#e8e2f1"/>
+<path d="M256 112c-72 0-130 58-130 130s58 130 130 130 130-58 130-130-58-130-130-130zm0 42a88 88 0 1 1 0 176 88 88 0 0 1 0-176z" fill="#806b91"/>
+<path d="M256 177v73l53 31" fill="none" stroke="#806b91" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="256" y="438" text-anchor="middle" font-family="Arial,sans-serif" font-size="46" font-weight="700" letter-spacing="7" fill="#292b31">DAYMATE</text>
+</svg>
