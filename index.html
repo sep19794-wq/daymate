@@ -279,10 +279,16 @@ h1{font-size:26px;letter-spacing:-.7px}
 <button class="back" onclick="showHome()">← 홈으로</button>
 <div class="card" id="daymateAccountCard" style="margin:12px 0 18px">
   <h3 style="margin:0 0 7px;font-size:15px">DAYMATE 계정</h3>
-  <p id="daymateAuthStatus" style="font-size:12px;color:var(--muted);line-height:1.6;margin:0 0 12px">Google 계정을 연결하면 로그인 상태를 확인할 수 있어요.</p>
-  <button type="button" class="btn primary" id="daymateGoogleLogin" onclick="daymateGoogleSignIn()" style="width:100%">Google로 로그인</button>
-  <button type="button" class="btn secondary" id="daymateGoogleLogout" onclick="daymateGoogleSignOut()" style="width:100%;display:none;margin-top:8px">로그아웃</button>
-  <p class="note" style="margin-bottom:0">현재 단계에서는 로그인만 연결돼요. 일정과 취향을 계정에 저장하고 여러 기기에서 동기화하는 기능은 다음 단계에서 추가할게요.</p>
+  <p id="daymateAuthStatus" role="status" aria-live="polite" style="font-size:12px;color:var(--muted);line-height:1.6;margin:0 0 12px">이메일과 비밀번호로 회원가입하거나 로그인해 주세요.</p>
+  <div id="daymateAuthForm">
+    <div class="field" style="margin:0 0 10px"><label for="daymateEmail">이메일</label><input id="daymateEmail" type="email" autocomplete="email" inputmode="email" placeholder="name@example.com" required></div>
+    <div class="field" style="margin:0 0 12px"><label for="daymatePassword">비밀번호</label><input id="daymatePassword" type="password" autocomplete="current-password" minlength="6" placeholder="6자 이상 입력해 주세요" required></div>
+    <button type="button" class="btn primary" id="daymateEmailLogin" onclick="daymateEmailSignIn()" style="width:100%">로그인</button>
+    <button type="button" class="btn secondary" id="daymateEmailSignup" onclick="daymateEmailSignUp()" style="width:100%;margin-top:8px">이메일로 회원가입</button>
+    <button type="button" class="btn secondary" id="daymatePasswordReset" onclick="daymatePasswordReset()" style="width:100%;margin-top:8px">비밀번호 재설정</button>
+  </div>
+  <button type="button" class="btn secondary" id="daymateEmailLogout" onclick="daymateEmailSignOut()" style="width:100%;display:none;margin-top:8px">로그아웃</button>
+  <p class="note" style="margin-bottom:0">회원가입 시 입력한 이메일과 비밀번호로 다시 로그인할 수 있어요. 비밀번호는 DAYMATE 화면에 저장하지 않습니다. 현재 일정과 취향은 이 기기의 브라우저에 저장되며, 계정 간 동기화는 아직 지원하지 않아요.</p>
 </div>
 <div class="eyebrow">MY PROFILE</div><h1>나를 조금 더<br>알려주세요.</h1><p class="sub">입력한 취향은 이 기기의 브라우저에 저장돼요.</p>
 <div class="field"><label for="nickname">닉네임</label><input id="nickname" placeholder="예: 민지"></div>
@@ -948,7 +954,16 @@ if('serviceWorker' in navigator && location.protocol.startsWith('http')){window.
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/13.4.0/firebase-app.js";
-  import { getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/13.4.0/firebase-auth.js";
+  import {
+    getAuth,
+    createUserWithEmailAndPassword,
+    signInWithEmailAndPassword,
+    sendPasswordResetEmail,
+    onAuthStateChanged,
+    signOut,
+    setPersistence,
+    browserLocalPersistence
+  } from "https://www.gstatic.com/firebasejs/13.4.0/firebase-auth.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyChYlFFite5VVSCuU5xo_i80478JZ3QRPo",
@@ -961,49 +976,126 @@ if('serviceWorker' in navigator && location.protocol.startsWith('http')){window.
 
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
-  const provider = new GoogleAuthProvider();
-  provider.setCustomParameters({ prompt: "select_account" });
+  const statusEl = document.getElementById("daymateAuthStatus");
+  const formEl = document.getElementById("daymateAuthForm");
+  const logoutEl = document.getElementById("daymateEmailLogout");
+  const emailEl = document.getElementById("daymateEmail");
+  const passwordEl = document.getElementById("daymatePassword");
+  const actionButtons = [
+    document.getElementById("daymateEmailLogin"),
+    document.getElementById("daymateEmailSignup"),
+    document.getElementById("daymatePasswordReset")
+  ];
 
-  function setAuthMessage(message, user = null) {
-    const status = document.getElementById("daymateAuthStatus");
-    const login = document.getElementById("daymateGoogleLogin");
-    const logout = document.getElementById("daymateGoogleLogout");
-    if (status) status.textContent = user ? `${user.displayName || "Google 사용자"}님 로그인됨 · ${user.email || ""}` : message;
-    if (login) login.style.display = user ? "none" : "block";
-    if (logout) logout.style.display = user ? "block" : "none";
+  function setMessage(message) {
+    if (statusEl) statusEl.textContent = message;
   }
 
-  window.daymateGoogleSignIn = async function () {
+  function friendlyError(error) {
+    const messages = {
+      "auth/invalid-email": "이메일 주소를 올바르게 입력해 주세요.",
+      "auth/missing-password": "비밀번호를 입력해 주세요.",
+      "auth/weak-password": "비밀번호는 6자 이상으로 설정해 주세요.",
+      "auth/email-already-in-use": "이미 가입된 이메일이에요. 로그인해 주세요.",
+      "auth/invalid-credential": "이메일 또는 비밀번호가 맞지 않아요. 다시 확인해 주세요.",
+      "auth/user-not-found": "가입된 계정을 찾을 수 없어요. 먼저 회원가입해 주세요.",
+      "auth/wrong-password": "비밀번호가 맞지 않아요. 다시 확인해 주세요.",
+      "auth/too-many-requests": "시도가 너무 많아요. 잠시 후 다시 이용해 주세요.",
+      "auth/network-request-failed": "네트워크 연결을 확인한 뒤 다시 시도해 주세요.",
+      "auth/operation-not-allowed": "Firebase에서 이메일/비밀번호 로그인이 허용되어 있는지 확인해 주세요.",
+      "auth/unauthorized-domain": "현재 접속 주소가 Firebase 승인 도메인에 등록되어 있는지 확인해 주세요."
+    };
+    return messages[error?.code] || "요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.";
+  }
+
+  function setBusy(busy) {
+    actionButtons.forEach(button => { if (button) button.disabled = busy; });
+  }
+
+  function getCredentials() {
+    const email = (emailEl?.value || "").trim();
+    const password = passwordEl?.value || "";
+    if (!email) { setMessage("이메일을 입력해 주세요."); emailEl?.focus(); return null; }
+    if (!password) { setMessage("비밀번호를 입력해 주세요."); passwordEl?.focus(); return null; }
+    if (password.length < 6) { setMessage("비밀번호는 6자 이상 입력해 주세요."); passwordEl?.focus(); return null; }
+    return { email, password };
+  }
+
+  async function prepareAuth() {
+    await setPersistence(auth, browserLocalPersistence);
+  }
+
+  window.daymateEmailSignUp = async function () {
+    const credentials = getCredentials();
+    if (!credentials) return;
+    setBusy(true);
+    setMessage("회원가입을 진행하고 있어요...");
     try {
-      setAuthMessage("Google 로그인 화면으로 이동하고 있어요...");
-      await setPersistence(auth, browserLocalPersistence);
-      await signInWithRedirect(auth, provider);
+      await prepareAuth();
+      const result = await createUserWithEmailAndPassword(auth, credentials.email, credentials.password);
+      passwordEl.value = "";
+      setMessage(`${result.user.email} 계정으로 가입되었어요. DAYMATE에 오신 걸 환영해요!`);
     } catch (error) {
-      console.error("DAYMATE Google sign-in error:", error);
-      setAuthMessage("로그인을 시작하지 못했어요. Firebase 인증 도메인 설정을 확인해 주세요.");
-      alert("Google 로그인 오류: " + (error.code || error.message));
+      console.error("DAYMATE email sign-up error:", error);
+      setMessage(friendlyError(error));
+    } finally {
+      setBusy(false);
     }
   };
 
-  window.daymateGoogleSignOut = async function () {
+  window.daymateEmailSignIn = async function () {
+    const credentials = getCredentials();
+    if (!credentials) return;
+    setBusy(true);
+    setMessage("로그인하고 있어요...");
+    try {
+      await prepareAuth();
+      const result = await signInWithEmailAndPassword(auth, credentials.email, credentials.password);
+      passwordEl.value = "";
+      setMessage(`${result.user.email} 계정으로 로그인되었어요.`);
+    } catch (error) {
+      console.error("DAYMATE email sign-in error:", error);
+      setMessage(friendlyError(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  window.daymatePasswordReset = async function () {
+    const email = (emailEl?.value || "").trim();
+    if (!email) { setMessage("비밀번호 재설정 링크를 받을 이메일을 먼저 입력해 주세요."); emailEl?.focus(); return; }
+    setBusy(true);
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setMessage("비밀번호 재설정 이메일을 보냈어요. 받은편지함을 확인해 주세요.");
+    } catch (error) {
+      console.error("DAYMATE password reset error:", error);
+      setMessage(friendlyError(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  window.daymateEmailSignOut = async function () {
     try {
       await signOut(auth);
-      setAuthMessage("로그아웃했어요.");
+      setMessage("로그아웃했어요.");
     } catch (error) {
       console.error("DAYMATE sign-out error:", error);
-      alert("로그아웃 중 오류가 발생했어요: " + (error.code || error.message));
+      setMessage(friendlyError(error));
     }
   };
 
-  try {
-    await getRedirectResult(auth);
-  } catch (error) {
-    console.error("DAYMATE redirect result error:", error);
-    setAuthMessage("로그인 결과를 확인하지 못했어요. Firebase 인증 도메인 설정을 확인해 주세요.");
-  }
-
-  onAuthStateChanged(auth, (user) => {
-    setAuthMessage(user ? "로그인됨" : "Google 계정을 연결하면 로그인 상태를 확인할 수 있어요.", user);
+  onAuthStateChanged(auth, user => {
+    if (user) {
+      if (formEl) formEl.style.display = "none";
+      if (logoutEl) logoutEl.style.display = "block";
+      setMessage(`${user.email || "DAYMATE 사용자"} 계정으로 로그인되어 있어요.`);
+    } else {
+      if (formEl) formEl.style.display = "block";
+      if (logoutEl) logoutEl.style.display = "none";
+      setMessage("이메일과 비밀번호로 회원가입하거나 로그인해 주세요.");
+    }
   });
 </script>
 
