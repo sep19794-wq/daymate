@@ -277,6 +277,13 @@ h1{font-size:26px;letter-spacing:-.7px}
 </section>
 <section id="profileView">
 <button class="back" onclick="showHome()">← 홈으로</button>
+<div class="card" id="daymateAccountCard" style="margin:12px 0 18px">
+  <h3 style="margin:0 0 7px;font-size:15px">DAYMATE 계정</h3>
+  <p id="daymateAuthStatus" style="font-size:12px;color:var(--muted);line-height:1.6;margin:0 0 12px">Google 계정을 연결하면 로그인 상태를 확인할 수 있어요.</p>
+  <button type="button" class="btn primary" id="daymateGoogleLogin" onclick="daymateGoogleSignIn()" style="width:100%">Google로 로그인</button>
+  <button type="button" class="btn secondary" id="daymateGoogleLogout" onclick="daymateGoogleSignOut()" style="width:100%;display:none;margin-top:8px">로그아웃</button>
+  <p class="note" style="margin-bottom:0">현재 단계에서는 로그인만 연결돼요. 일정과 취향을 계정에 저장하고 여러 기기에서 동기화하는 기능은 다음 단계에서 추가할게요.</p>
+</div>
 <div class="eyebrow">MY PROFILE</div><h1>나를 조금 더<br>알려주세요.</h1><p class="sub">입력한 취향은 이 기기의 브라우저에 저장돼요.</p>
 <div class="field"><label for="nickname">닉네임</label><input id="nickname" placeholder="예: 민지"></div>
 <div class="field"><label>성별</label><div data-key="gender"><button class="choice">여성</button><button class="choice">남성</button><button class="choice">선택 안 함</button></div><p class="note">성별은 코디 추천을 맞추기 위한 선택 사항이에요. 원하면 언제든 바꿀 수 있어요.</p></div>
@@ -936,6 +943,68 @@ try{history.replaceState({daymatePage:'home'},'','#home');}catch(e){}
 let deferredInstallPrompt=null;
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstallPrompt=e;const hint=document.getElementById('installHint');if(hint){hint.style.display='block';hint.textContent='DAYMATE를 홈 화면에 설치할 수 있어요. 브라우저의 설치 안내를 이용해 보세요.';}});
 if('serviceWorker' in navigator && location.protocol.startsWith('http')){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));}
+</script>
+
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/13.4.0/firebase-app.js";
+  import { getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/13.4.0/firebase-auth.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyChYlFFite5VVSCuU5xo_i80478JZ3QRPo",
+    authDomain: "daymate-db545.firebaseapp.com",
+    projectId: "daymate-db545",
+    storageBucket: "daymate-db545.firebasestorage.app",
+    messagingSenderId: "407536288520",
+    appId: "1:407536288520:web:ec15370086d46af3bea2bd"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: "select_account" });
+
+  function setAuthMessage(message, user = null) {
+    const status = document.getElementById("daymateAuthStatus");
+    const login = document.getElementById("daymateGoogleLogin");
+    const logout = document.getElementById("daymateGoogleLogout");
+    if (status) status.textContent = user ? `${user.displayName || "Google 사용자"}님 로그인됨 · ${user.email || ""}` : message;
+    if (login) login.style.display = user ? "none" : "block";
+    if (logout) logout.style.display = user ? "block" : "none";
+  }
+
+  window.daymateGoogleSignIn = async function () {
+    try {
+      setAuthMessage("Google 로그인 화면으로 이동하고 있어요...");
+      await setPersistence(auth, browserLocalPersistence);
+      await signInWithRedirect(auth, provider);
+    } catch (error) {
+      console.error("DAYMATE Google sign-in error:", error);
+      setAuthMessage("로그인을 시작하지 못했어요. Firebase 인증 도메인 설정을 확인해 주세요.");
+      alert("Google 로그인 오류: " + (error.code || error.message));
+    }
+  };
+
+  window.daymateGoogleSignOut = async function () {
+    try {
+      await signOut(auth);
+      setAuthMessage("로그아웃했어요.");
+    } catch (error) {
+      console.error("DAYMATE sign-out error:", error);
+      alert("로그아웃 중 오류가 발생했어요: " + (error.code || error.message));
+    }
+  };
+
+  try {
+    await getRedirectResult(auth);
+  } catch (error) {
+    console.error("DAYMATE redirect result error:", error);
+    setAuthMessage("로그인 결과를 확인하지 못했어요. Firebase 인증 도메인 설정을 확인해 주세요.");
+  }
+
+  onAuthStateChanged(auth, (user) => {
+    setAuthMessage(user ? "로그인됨" : "Google 계정을 연결하면 로그인 상태를 확인할 수 있어요.", user);
+  });
 </script>
 
 </body>
